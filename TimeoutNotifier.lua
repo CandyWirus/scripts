@@ -33,7 +33,7 @@ while wait() do
 		text.Text = "Server not responding... " .. string.format("%0.2f", tonumber(string.sub(text.Text, -4, -1)) + .03)
 	elseif new == last and autoreconnect then
 		gui.Enabled = true
-		text.Text = "Reconnecting in  0.00 seconds."
+		text.Text = "Reconnecting in  5.00 seconds."
 		while wait() do
 			text.Text = "Reconnecting in " .. string.format("%0.2f", tonumber(string.sub(text.Text, -13, -10)) - .03) .. " seconds."
 			if tonumber(string.format("%0.2f", tonumber(string.sub(text.Text, -13, -10)) - .03)) < 0 then
