@@ -1,7 +1,7 @@
 return {
-	["Thread"] = function(f, ...)
+	["new"] = function(f, ...)
 		local e = Instance.new("BindableEvent")
-		local fin
+		local fin, result
 		e.Event:Connect(function()
 			fin = true
 		end)
@@ -13,26 +13,27 @@ return {
 				if self.Event then
 					self.Event:Destroy()
 				end
-				return {
-					["Result"] = function()
-						return unpack(self.Result)
-					end,
-					["Success"] = self.Success
-					
-				}
+				return self
+			end,
+			["Result"] = function()
+				if result then
+					return unpack(result)
+				else
+					error("Cannot get result of Promise: Computation Incomplete (use Promise:join())")
+				end
 			end
 		}
 		local a = {...}
 		spawn(function()
 			local s, er = pcall(function()
 				local r = {f(unpack(a))}
-				thread.Result = r
+				result = r
 				thread.Finished = true
 				thread.Success = true
 				thread.Event:Fire()
 			end)
 			if not s then
-				thread.Result = {er}
+				result = {er}
 				thread.Finished = true
 				thread.Success = false
 				thread.Event:Fire()
