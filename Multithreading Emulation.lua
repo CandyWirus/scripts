@@ -1,4 +1,4 @@
-local Threading = {
+return {
 	["Thread"] = function(f, ...)
 		local e = Instance.new("BindableEvent")
 		local fin
