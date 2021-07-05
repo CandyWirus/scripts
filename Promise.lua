@@ -6,7 +6,7 @@ return {
 			fin = true
 			e:Destroy()
 		end)
-		local thread = {
+		local promise = {
 			["Finished"] = false,
 			["Event"] = e,
 			["join"] = function(self)
@@ -29,18 +29,18 @@ return {
 			local s, er = pcall(function()
 				local r = {f(unpack(a))}
 				result = r
-				thread.Finished = true
-				thread.Success = true
-				thread.Event:Fire()
+				promise.Finished = true
+				promise.Success = true
+				promise.Event:Fire()
 			end)
 			if not s then
 				result = {er}
-				thread.Finished = true
-				thread.Success = false
-				thread.Event:Fire()
+				promise.Finished = true
+				promise.Success = false
+				promise.Event:Fire()
 				error(er)
 			end
 		end)
-		return thread
+		return promise
 	end
 }
