@@ -4,6 +4,7 @@ return {
 		local fin, result
 		e.Event:Connect(function()
 			fin = true
+			e:Destroy()
 		end)
 		local thread = {
 			["Finished"] = false,
