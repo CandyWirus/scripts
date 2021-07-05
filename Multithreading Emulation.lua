@@ -2,7 +2,7 @@ return {
 	["Thread"] = function(f, ...)
 		local e = Instance.new("BindableEvent")
 		local fin
-		e.Event:Connect(function(...)
+		e.Event:Connect(function()
 			fin = true
 		end)
 		local thread = {
