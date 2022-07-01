@@ -6,7 +6,7 @@
 local Path = "atb.txt" --There are no folder checks. If you would like this script to work with folders you will have to create them in advance.
 local OnlyScrapePremium = true
 local IgnoreLocalPlayer = true
-local IgnoreFriends = true --A blocklist is a better option.
+local IgnoreFriends = false --A blocklist is a better option.
 
 
 local Players = game:GetService("Players")
