@@ -9,6 +9,11 @@ local rw = RenderWindow.new("Universe Viewer")
 local placeId = game.PlaceId
 local gameId = game.GameId
 
+if gameId == 0 then --autoexecute compatibility
+	game:GetPropertyChangedSignal("GameId"):Wait()
+	gameId = game.GameId
+end
+
 local function addPlace(name, id)
 	local line = rw:SameLine()
 	local tpButton = line:Button()
