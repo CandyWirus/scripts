@@ -16,9 +16,11 @@ local generalTab = tabs:Add("General")
 local uvTab = tabs:Add("Universe Viewer")
 
 local placeId = game.PlaceId
-
+if placeId == 0 then
+	game:GetPropertyChangedSignal("PlaceId"):Wait()
+	placeId = game.PlaceId
+end
 local gameId = game.GameId
-
 if gameId == 0 then --autoexecute
 	game:GetPropertyChangedSignal("GameId"):Wait()
 	gameId = game.GameId
