@@ -3,6 +3,9 @@
 
 assert(RenderWindow, "no v3?? kys queuetard")
 
+local module = shared.TeleportUtility or {}
+shared.TeleportUtility = module
+
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local AssetService = game:GetService("AssetService")
@@ -73,6 +76,23 @@ local parseJoinString = function(joinString)
 	end
 end
 
+local notify = function(message, toastType)
+	print("[Teleport Utility] " .. tostring(message))
+	syn.toast_notification({
+		Type = toastType or 4,
+		Title = "Teleport Utility",
+		Content = message
+	})
+end
+
+local printTeleport = function(place, job)
+	local str = "Teleporting to " .. place
+	if job then
+		str ..= ":" .. job
+	end
+	notify(str .. "...", 4)
+end
+
 local tpFunc = [[
 	local Players = game:GetService("Players")
 	local TeleportService = game:GetService("TeleportService")
@@ -80,7 +100,16 @@ local tpFunc = [[
 	local placeId = %s
 	local jobId = "%s"
 	
+	local module = shared.TeleportUtility or {}
+	shared.TeleportUtility = module
+	module.AutoReconnectRestricted = true
+	
 	print("[Teleport Utility] Teleporting to " .. placeId .. ":" .. jobId .. "...")
+	syn.toast_notification({
+		Type = 4,
+		Title = "Teleport Utility",
+		Content = "Teleporting to " .. placeId .. ":" .. jobId .. "..."
+	})
 	TeleportService:TeleportToPlaceInstance(placeId, jobId)
 	local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
 	player:Kick()
@@ -91,14 +120,24 @@ local joblessFunc = [[
 
 	local placeId = %s
 	
+	local module = shared.TeleportUtility or {}
+	shared.TeleportUtility = module
+	module.AutoReconnectRestricted = true
+	
 	print("[Teleport Utility] Teleporting to " .. placeId .. "...")
+	syn.toast_notification({
+		Type = 4,
+		Title = "Teleport Utility",
+		Content = "Teleporting to " .. placeId .. "..."
+	})
 	TeleportService:Teleport(placeId)
 	local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
 	player:Kick()
 ]]
 local forceTeleport = function(place, job) --bypasses third party teleport restrictions, which should be a built-in feature to synapse imo
-	syn.queue_on_teleport(string.format(if job then tpFunc else joblessFunc, place, job))
-	rejoin(placeId)
+	--syn.queue_on_teleport(string.format(if job then tpFunc else joblessFunc, place, job)) --method is broken https://sx3.nolt.io/2142
+	--rejoin(placeId)
+	notify("Force-Teleport is temporarily disabled", 3)
 end
 
 local boxLine = generalTab:SameLine()
@@ -109,10 +148,8 @@ serverHopButton.Label = "Server Hop"
 local tpButton = boxLine:Button()
 tpButton.Label = "Teleport"
 
-
-
 serverHopButton.OnUpdated:Connect(function()
-	print("[Teleport Utility] Finding server to hop to...")
+	notify("Finding server to hop to...", 4)
 	local success, servers = pcall(function()
 		return HttpService:JSONDecode(syn.request({
 			Url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?limit=100",
@@ -221,15 +258,14 @@ local errorEnums = {
 		ConnectionError.TeleportFailure,
 		ConnectionError.TeleportFlooded,
 		ConnectionError.DisconnectDuplicatePlayer,
-		ConnectionError.DisconnectClientRequest,
-		ConnectionError.DisconnectRaknetErrors,
 		ConnectionError.DisconnectConnectionLost,
+		ConnectionError.DisconnectReceivePacketError,
 		TeleportResult.Failure,
-		TeleportResult.Flooded,
-		ConnectionError.DisconnectReceivePacketError
+		TeleportResult.Flooded
 	},
 	Cancel = {
 		ConnectionError.DisconnectWrongVersion,
+		ConnectionError.DisconnectModeratedGame,
 		TeleportResult.GameNotFound,
 		TeleportResult.Unauthorized
 	},
@@ -241,26 +277,21 @@ local errorEnums = {
 		ConnectionError.PlacelaunchRestricted,
 		ConnectionError.DisconnectLuaKick,
 		ConnectionError.PlacelaunchGameEnded,
+		ConnectionError.DisconnectDevMaintenance,
+		ConnectionError.DisconnectClientRequest,
+		ConnectionError.DisconnectRaknetErrors,
 		TeleportResult.GameEnded,
 		TeleportResult.GameFull
 	}
 }
 
-local printTeleport = function(place, job)
-	local str = "[Teleport Utility] Teleporting to " .. placeId
-	if job then
-		str ..= ":" .. job
-	end
-	print(str .. "...")
-end
-
 rejoin = function(place, job)
-	
+	module.AutoReconnectRestricted = true
 	local thread = coroutine.running()
 	local connection
 	connection = TeleportService.TeleportInitFailed:Connect(function(player, result)
 		TeleportService:TeleportCancel()
-		print("[Teleport Utility] Teleport failed with \"" .. tostring(result) .. "\"")
+		notify("Teleport failed with \"" .. tostring(result) .. "\"", 3)
 		for _, v in pairs(errorEnums.Retry) do
 			if v == result then
 				printTeleport(place, job)
@@ -305,7 +336,7 @@ tpButton.OnUpdated:Connect(function()
 		if actualPlaceId then
 			forceTeleport(actualPlaceId)
 		elseif #value == 36 then
-			TeleportService:TeleportToPlaceInstance(placeId, value)
+			rejoin(placeId, value)
 		else
 			rejoin(placeId, jobId)
 		end
@@ -317,8 +348,8 @@ showTimeoutCheck.OnUpdated:Connect(save)
 
 --autoreconnect
 
-local function teleportCheck()
-	if autoReconnectCheck.Value then
+local teleportCheck = function()
+	if autoReconnectCheck.Value and not module.AutoReconnectRestricted then
 		local errorCode = GuiService:GetErrorCode()
 		for _, v in pairs(errorEnums.Retry) do
 			if v == errorCode then
@@ -361,18 +392,10 @@ text.Font = DrawFont.RegisterDefault("Inconsolata_Regular", {
 box.Visible = false
 text.Visible = false
 
-local teleporting = false
 task.spawn(function()
+	local teleporting = false
 	while task.wait() do --autoexecute shit
-		if teleporting then
-			teleportCheck()
-			continue
-		end
-		local errorCode = GuiService:GetErrorCode()
-		if (errorCode == Enum.ConnectionError.DisconnectConnectionLost or errorCode == Enum.ConnectionError.DisconnectDuplicatePlayer) and autoReconnectCheck.Value and Stats.DataReceiveKbps == 0 then
-			TeleportService:TeleportToPlaceInstance(placeId, jobId)
-			teleporting = true
-		end
+		teleportCheck()
 		if game:IsLoaded() then
 			break
 		end
@@ -424,7 +447,8 @@ local addPlace = function(data)
 	line.Visible = false
 	separator.Visible = false
 	
-	selectable.Label = data.Name .. (id == placeId and " - you are HERE" or "")
+	local gameName = data.Name
+	selectable.Label = gameName .. (id == placeId and " - you are HERE" or "")
 	tpButton.Label = "Teleport"
 	copyButton.Label = "Copy ID"
 	
@@ -449,10 +473,12 @@ local addPlace = function(data)
 		activeEntry[3] = separator
 	end)
 	tpButton.OnUpdated:Connect(function()
-		TeleportService:Teleport(id)
+		rejoin(id)
 	end)
 	copyButton.OnUpdated:Connect(function()
-		setclipboard(tostring(id))
+		local strid = tostring(id)
+		notify(string.format("Copied %s (%s) to clipboard", strid, gameName), 1)
+		setclipboard(strid)
 	end)
 end
 
@@ -470,12 +496,14 @@ while true do
 		line:Label(name)
 		copyButton.Label = "Copy Game ID"
 		copyButton.OnUpdated:Connect(function()
-			setclipboard(tostring(gameId))
+			local strid = tostring(gameId)
+			notify(string.format("Copied %s (%s) to clipboard", strid, name), 1)
+			setclipboard(strid)
 		end)
 		
 		tpButton.Label = "Teleport to Start Place"
 		tpButton.OnUpdated:Connect(function()
-			TeleportService:Teleport(starterId)
+			rejoin(starterId)
 		end)
 		uvTab:Separator()
 	end)
@@ -496,4 +524,4 @@ while true do
 	pages:AdvanceToNextPageAsync()
 end
 
-shared.TeleportUtilityRenderWindow = rw
+module.RenderWindow = rw
