@@ -6,12 +6,12 @@ assert(RenderWindow, "no v3?? kys queuetard")
 local module = shared.TeleportUtility or {}
 shared.TeleportUtility = module
 
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-local AssetService = game:GetService("AssetService")
-local Players = game:GetService("Players")
-local GuiService = game:GetService("GuiService")
-local Stats = game:GetService("Stats")
+local TeleportService = cloneref(game:GetService("TeleportService"))
+local HttpService = cloneref(game:GetService("HttpService"))
+local AssetService = cloneref(game:GetService("AssetService"))
+local Players = cloneref(game:GetService("Players"))
+local GuiService = cloneref(game:GetService("GuiService"))
+local Stats = cloneref(game:GetService("Stats"))
 
 local rw = RenderWindow.new("Teleport Utility")
 local tabs = rw:TabMenu()
@@ -94,8 +94,8 @@ local printTeleport = function(place, job)
 end
 
 local tpFunc = [[
-	local Players = game:GetService("Players")
-	local TeleportService = game:GetService("TeleportService")
+	local Players = cloneref(game:GetService("Players"))
+	local TeleportService = cloneref(game:GetService("TeleportService"))
 
 	local placeId = %s
 	local jobId = "%s"
@@ -115,8 +115,8 @@ local tpFunc = [[
 	player:Kick()
 ]]
 local joblessFunc = [[
-	local Players = game:GetService("Players")
-	local TeleportService = game:GetService("TeleportService")
+	local Players = cloneref(game:GetService("Players"))
+	local TeleportService = cloneref(game:GetService("TeleportService"))
 
 	local placeId = %s
 	
@@ -152,7 +152,7 @@ serverHopButton.OnUpdated:Connect(function()
 	notify("Finding server to hop to...", 4)
 	local success, servers = pcall(function()
 		return HttpService:JSONDecode(syn.request({
-			Url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?limit=100",
+			Url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?limit=100",
 			Method = "GET"
 		}).Body).data
 	end)
