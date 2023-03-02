@@ -577,7 +577,7 @@ do
     local NoErrorEnum = Enum.ConnectionError.OK
 
     local tryAutoReconnect = function()
-        if Stats.DataReceiveKbps == 0 and SavedSettings.AutoReconnectEnabled and not module.AutoReconnectRestricted then
+        if Stats.DataReceiveKbps == 0 and SavedSettings.AutoReconnectEnabled then
             local errorCode = GuiService:GetErrorCode()
             if errorCode ~= NoErrorEnum then --prevents rejoin when game is loading
                 for _, v in RetryEnums do
@@ -638,7 +638,7 @@ do
                     UI_TimeoutBanner.Visible = shouldBannerDisplay
                     UI_TimeoutText.Text = string.format("Server not responding... %0.2f", downTime)
                 else
-                    local shouldBannerDisplay = SavedSettings.ShowConnectionTimeouts and game:IsLoaded()
+                    local shouldBannerDisplay = SavedSettings.ShowConnectionTimeouts and game:IsLoaded() and SavedSettings.AutoReconnectEnabled
                     UI_TimeoutText.Text = "Reconnecting..."
                     UI_TimeoutText.Visible = shouldBannerDisplay
                     UI_TimeoutBanner.Visible = shouldBannerDisplay
