@@ -7,7 +7,7 @@ local module = {}
 shared.TeleportUtility = module
 
 --UI INITIALIZATION
-local UI_NameLabel, UI_CustomTeleportButton, UI_ServerHopButton, UI_CustomTeleportTextBox, Function_AddUniverseViewerEntryUI, UI_ClientTeleportCheckMark, UI_ServerTeleportCheckMark, UI_AutoReconnectCheckMark, UI_ShowTimeoutsCheckMark, UI_TeleportToStartPlaceButton, UI_CopyGameIdButton
+local UI_NameLabel, UI_CustomTeleportButton, UI_ServerHopButton, UI_CustomTeleportTextBox, Function_AddUniverseViewerEntryUI, UI_ClientTeleportCheckMark, UI_ServerTeleportCheckMark, UI_ShowGameTeleportsCheckMark, UI_AutoReconnectCheckMark, UI_ShowTimeoutsCheckMark, UI_TeleportToStartPlaceButton, UI_CopyGameIdButton
 do
     local UI_RenderWindow = RenderWindow.new("Teleport Utility")
 
@@ -27,6 +27,7 @@ do
     generalTab:Separator()
     UI_ClientTeleportCheckMark = generalTab:CheckBox()
     UI_ServerTeleportCheckMark = generalTab:CheckBox()
+    UI_ShowGameTeleportsCheckMark = generalTab:CheckBox()
     generalTab:Separator()
     UI_AutoReconnectCheckMark = generalTab:CheckBox()
     UI_ShowTimeoutsCheckMark = generalTab:CheckBox()
@@ -62,6 +63,7 @@ do
     
     UI_ClientTeleportCheckMark.Label = "Allow Client-side Teleports"
     UI_ServerTeleportCheckMark.Label = "Allow Server-side Teleports"
+    UI_ShowGameTeleportsCheckMark.Label = "Show Teleport Notifications"
     UI_AutoReconnectCheckMark.Label = "Auto Reconnect"
     UI_ShowTimeoutsCheckMark.Label = "Display connection time-outs"
     UI_CustomTeleportButton.Label = "Teleport"
@@ -116,7 +118,6 @@ local ErrorEnumsString = [[
         ConnectionError.TeleportGameFull,
         ConnectionError.DisconnectRobloxMaintenance,
         ConnectionError.PlacelaunchRestricted,
-        ConnectionError.DisconnectLuaKick,
         ConnectionError.PlacelaunchGameEnded,
         ConnectionError.DisconnectDevMaintenance,
         ConnectionError.DisconnectClientRequest,
@@ -156,7 +157,8 @@ do
         ClientTeleportsEnabled = true,
         ServerTeleportsEnabled = true,
         AutoReconnectEnabled = false,
-        ShowConnectionTimeouts = false
+        ShowConnectionTimeouts = false,
+        ShowGameTeleports = false
     }
 
     assert(not isfolder(SettingsFileName), SettingsFileName .. " has been created as a folder. Teleport Utility cannot continue. Delete workspace\\" .. SettingsFileName .. " to use Teleport Utility.")
@@ -176,6 +178,7 @@ do
     do
         UI_ClientTeleportCheckMark.Value = settingsIndex.ClientTeleportsEnabled
         UI_ServerTeleportCheckMark.Value = settingsIndex.ServerTeleportsEnabled
+        UI_ShowGameTeleportsCheckMark.Value = settingsIndex.ShowGameTeleports
         local autoReconnectEnabled = settingsIndex.AutoReconnectEnabled
         UI_AutoReconnectCheckMark.Value = autoReconnectEnabled
         UI_ShowTimeoutsCheckMark.Value = settingsIndex.ShowConnectionTimeouts
@@ -192,6 +195,10 @@ end
 
 UI_ClientTeleportCheckMark.OnUpdated:Connect(function()
     SavedSettings.ClientTeleportsEnabled = UI_ClientTeleportCheckMark.Value
+end)
+
+UI_ShowGameTeleportsCheckMark.OnUpdated:Connect(function()
+    SavedSettings.ShowGameTeleports = UI_ShowGameTeleportsCheckMark.Value
 end)
 
 UI_AutoReconnectCheckMark.OnUpdated:Connect(function()
@@ -297,6 +304,10 @@ do
     ]], forceBasicTeleportString, "%s", "%s")
 
     Teleport = function(place, job)
+		task.spawn(function()
+			local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+			player:Kick("[Teleport Utility] You are being teleported.")
+		end)
         local isSameUniverseTeleport = false
         for i = 1, #PlacesInUniverseList do
             if place == PlacesInUniverseList[i] then
@@ -439,11 +450,11 @@ do
 			
 			local identity = get_thread_identity()
 			set_thread_identity(7)
-			local selfDebugId = GetDebugId(self)
+			local selfDebugId = typeof(self) == "Instance" and GetDebugId(self)
 			local teleportServiceDebugId = GetDebugId(TeleportService) --this seems to change while the game is loading, so i decided not to cache it
 			set_thread_identity(identity)
 			
-            if selfDebugId == teleportServiceDebugId and not SavedSettings.ClientTeleportsEnabled and not checkcaller() then
+            if selfDebugId == teleportServiceDebugId and not checkcaller() then
                 local method = getnamecallmethod()
                 local customLoadingScreenIdx
                 local hookFilter
@@ -459,7 +470,19 @@ do
                 else
                     return originalNamecall(...)
                 end
-                return getfilter(hookFilter, originalNamecall, function(...)
+                local placeId = select(2, ...)
+                local jobId = select(3, ...) -- only for TeleportService:TeleportToPlaceInstance
+
+                local baseNotifyString = ""
+                if method == "TeleportToPlaceInstance" then
+                    baseNotifyString = " to " .. placeId .. ":" .. jobId .. "via TeleportService:TeleportToPlaceInstance."
+                else
+                    baseNotifyString = " to " .. placeId .. " via call to TeleportService:" .. method .. "."
+                end
+
+                return getfilter(hookFilter, function(...)
+                    return originalNamecall(...)
+                end, function(...)
                     local customLoadingScreen = select(customLoadingScreenIdx, ...)
                     if customLoadingScreen then
                         local isCloneable = pcall(function()
@@ -469,7 +492,17 @@ do
                             return originalNamecall(...)
                         end
                     end
-                    return
+                    if SavedSettings.ClientTeleportsEnabled then
+                        if UI_ShowGameTeleportsCheckMark.Value then
+                            CreateTeleportUtilityNotification("Teleporting" .. baseNotifyString, 4)
+                        end
+                        return originalNamecall(...)
+                    else
+                        if UI_ShowGameTeleportsCheckMark.Value then
+                            CreateTeleportUtilityNotification("Blocked teleport" .. baseNotifyString, 4)
+                        end
+                        return
+                    end
                 end)(...)
             end
             
@@ -508,9 +541,16 @@ do
 
     originalIdxTeleport = othHook(IdxTeleport, function(...)
         return getfilter(NamecallFilter_Teleport, originalIdxTeleport, function(...)
+            local placeId = select(2, ...)
             if IdxHook(select(1, ...), select(5, ...)) then
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Blocked teleport to " .. placeId .. " via TeleportService.Teleport.", 4)
+                end
                 return
             else
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Teleporting to " .. placeId .. " via TeleportService.Teleport.", 4)
+                end
                 return originalIdxTeleport(...)
             end
         end)(...)
@@ -518,20 +558,35 @@ do
 
     originalIdxTeleportToPlaceInstance = othHook(IdxTeleportToPlaceInstance, function(...)
         return getfilter(NamecallFilter_TeleportToPlaceInstance, originalIdxTeleportToPlaceInstance, function(...)
+            local placeId = select(2, ...)
+            local jobId = select(3, ...)
             if IdxHook(select(1, ...), select(7, ...)) then
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Blocked teleport to " .. placeId .. ":" .. jobId .. " via TeleportService.TeleportToPlaceInstance.", 4)
+                end
                 return
             else
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Teleporting to " .. placeId .. ":" .. jobId .. " via TeleportService.TeleportToPlaceInstance.", 4)
+                end
                 return originalIdxTeleportToPlaceInstance(...)
             end
         end)(...)
     end)
 
-    IdxTeleportToSpawnByName = othHook(IdxTeleportToSpawnByName, function(...)
-        return getfilter(NamecallFilter_TeleportToSpawnByName, IdxTeleportToSpawnByName, function(...)
+    originalIdxTeleportToSpawnByName = othHook(IdxTeleportToSpawnByName, function(...)
+        return getfilter(NamecallFilter_TeleportToSpawnByName, originalIdxTeleportToSpawnByName, function(...)
+            local placeId = select(2, ...)
             if IdxHook(select(1, ...), select(6, ...)) then
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Blocked teleport to " .. placeId .. " via TeleportService.TeleportToSpawnByName.", 4)
+                end
                 return
             else
-                return IdxTeleportToSpawnByName(...)
+                if UI_ShowGameTeleportsCheckMark.Value then
+                    CreateTeleportUtilityNotification("Teleporting to " .. placeId .. " via TeleportService.TeleportToSpawnByName.", 4)
+                end
+                return originalIdxTeleportToSpawnByName(...)
             end
         end)(...)
     end)
@@ -540,7 +595,7 @@ end
 --SERVER TELEPORT TOGGLE
 
 do
-    local ServerTeleportsConnection
+    local ServerTeleportsConnection, ServerTeleportSignal
 
     local toggleServerTeleports = function(enabled)
         if ServerTeleportsConnection then
@@ -561,6 +616,26 @@ do
         end
         local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
         ServerTeleportsConnection = getconnections(player.OnTeleportInternal)[1]
+        ServerTeleportSignal = geteventmember(player, "OnTeleportInternal")
+        local RequestedFromServer = Enum.TeleportState.RequestedFromServer
+        ServerTeleportSignal:Connect(function(...)
+            if UI_ShowGameTeleportsCheckMark.Value then
+                if select(1, ...) == RequestedFromServer then
+                    local data = select(2, ...)
+                    local placeId = data.placeId
+                    local jobId = data.instanceId
+                    local strJobId = ":" .. jobId
+                    if strJobId == ":" then
+                        strJobId = ""
+                    end
+                    if UI_ServerTeleportCheckMark.Value then
+                        CreateTeleportUtilityNotification("Teleporting to " .. placeId .. strJobId .. " via server-sided request.", 4)
+                    else
+                        CreateTeleportUtilityNotification("Blocked teleport to " .. placeId .. strJobId .. " via server-sided request.", 4)
+                    end
+                end
+            end
+        end)
         toggleServerTeleports(SavedSettings.ServerTeleportsEnabled)
     end)
 
