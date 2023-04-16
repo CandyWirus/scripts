@@ -7,15 +7,15 @@ local module = {}
 shared.TeleportUtility = module
 
 --UI INITIALIZATION
-local UI_NameLabel, UI_CustomTeleportButton, UI_ServerHopButton, UI_CustomTeleportTextBox, Function_AddUniverseViewerEntryUI, UI_ClientTeleportCheckMark, UI_ServerTeleportCheckMark, UI_ShowGameTeleportsCheckMark, UI_AutoReconnectCheckMark, UI_ShowTimeoutsCheckMark, UI_TeleportToStartPlaceButton, UI_CopyGameIdButton
+local UI_NameLabel, UI_CustomTeleportButton, UI_ServerHopButton, UI_CustomTeleportTextBox, Function_AddUniverseViewerEntryUI, UI_ClientTeleportCheckMark, UI_ServerTeleportCheckMark, UI_ShowGameTeleportsCheckMark, UI_AutoReconnectCheckMark, UI_ShowTimeoutsCheckMark, UI_TeleportToStartPlaceButton, UI_CopyGameIdButton, UI_Tabs, UI_SortOrderCheckMark, UI_ExcludeFullGamesCheckMark, UI_SetServerPlaceButton, UI_ServerTextBox, UI_ServerListChildWindow
 do
     local UI_RenderWindow = RenderWindow.new("Teleport Utility")
 
     UI_RenderWindow.DefaultSize = Vector2.new(550, 550)
 
-    local tabs = UI_RenderWindow:TabMenu()
+    UI_Tabs = UI_RenderWindow:TabMenu()
 
-    local generalTab = tabs:Add("General")
+    local generalTab = UI_Tabs:Add("General")
 
     local boxLine = generalTab:SameLine()
 
@@ -29,26 +29,31 @@ do
     UI_ServerTeleportCheckMark = generalTab:CheckBox()
     UI_ShowGameTeleportsCheckMark = generalTab:CheckBox()
     generalTab:Separator()
+    UI_SortOrderCheckMark = generalTab:CheckBox()
+    UI_ExcludeFullGamesCheckMark = generalTab:CheckBox()
+     generalTab:Separator()
     UI_AutoReconnectCheckMark = generalTab:CheckBox()
     UI_ShowTimeoutsCheckMark = generalTab:CheckBox()
 
-    local uvTab = tabs:Add("Universe Viewer")
+    local uvTab = UI_Tabs:Add("Universe Viewer")
 
     local universeLine = uvTab:SameLine()
 
     UI_TeleportToStartPlaceButton = universeLine:Button()
     UI_CopyGameIdButton = universeLine:Button()
-    UI_NameLabel = universeLine:Label("Loading...")
 	
 	uvTab:Separator()
+    local universeChild = uvTab:Child()
+
+    UI_NameLabel = universeLine:Label("Loading...")
     
     Function_AddUniverseViewerEntryUI = function(data)
-        local selectable = uvTab:Selectable()
-        local line = uvTab:SameLine()
-        local separator = uvTab:Separator()
+        local selectable = universeChild:Selectable()
+        local line = universeChild:SameLine()
+        local separator = universeChild:Separator()
         local tpButton = line:Button()
         local copyButton = line:Button()
-        --local serverButton = line:Button() --scrapped feature
+        local serverButton = line:Button()
 
         selectable.Toggles = true
         line.Visible = false
@@ -56,9 +61,35 @@ do
 
         tpButton.Label = "Teleport"
         copyButton.Label = "Copy ID"
-        --serverButton.Label = "View Servers"
+        serverButton.Label = "View Servers"
 
-        return selectable, line, separator, tpButton.OnUpdated, copyButton.OnUpdated--, serverButton.OnUpdated
+        return selectable, line, separator, tpButton.OnUpdated, copyButton.OnUpdated, serverButton.OnUpdated
+    end
+
+    local serverTab = UI_Tabs:Add("Server List")
+
+    local serverBoxLine = serverTab:SameLine()
+    UI_SetServerPlaceButton = serverBoxLine:Button()
+    UI_ServerTextBox = serverBoxLine:TextBox()
+
+    serverTab:Separator()
+    UI_ServerListChildWindow = serverTab:Child()
+
+    Function_AddServerListEntryUI = function(data)
+        local selectable = UI_ServerListChildWindow:Selectable()
+        local line = UI_ServerListChildWindow:SameLine()
+        local separator = UI_ServerListChildWindow:Separator()
+        local tpButton = line:Button()
+        local copyButton = line:Button()
+
+        selectable.Toggles = true
+        line.Visible = false
+        separator.Visible = false
+
+        tpButton.Label = "Teleport"
+        copyButton.Label = "Copy ID"
+        
+        return selectable, line, separator, tpButton.OnUpdated, copyButton.OnUpdated
     end
     
     UI_ClientTeleportCheckMark.Label = "Allow Client-side Teleports"
@@ -66,10 +97,13 @@ do
     UI_ShowGameTeleportsCheckMark.Label = "Show Teleport Notifications"
     UI_AutoReconnectCheckMark.Label = "Auto Reconnect"
     UI_ShowTimeoutsCheckMark.Label = "Display connection time-outs"
+    UI_SortOrderCheckMark.Label = "Sort servers by lowest player count"
+    UI_ExcludeFullGamesCheckMark.Label = "Exclude full servers"
     UI_CustomTeleportButton.Label = "Teleport"
     UI_ServerHopButton.Label = "Server Hop"
     UI_TeleportToStartPlaceButton.Label = "Teleport to Start Place"
     UI_CopyGameIdButton.Label = "Copy Game ID"
+    UI_SetServerPlaceButton.Label = "Refresh"
 
     module.RenderWindow = UI_RenderWindow
 end
@@ -148,6 +182,66 @@ if Global_JobId == "" then
     Global_JobId = game.Jobid
 end
 
+UI_CustomTeleportTextBox.Value = `{Global_PlaceId}:{Global_JobId}`
+UI_ServerTextBox.Value = tostring(Global_PlaceId)
+local serverListPlaceId = Global_PlaceId
+
+local url = syn.crypt.url
+local encode = url.encode
+local decode = url.decode
+
+local sub = string.sub
+local split = string.split
+local find = string.find
+local format = string.format
+
+local serverUrl
+do
+    local indices = {}
+    local ShittyUrl = {
+        __index = function(t, k)
+            return indices[t][k]
+        end,
+        __newindex = function(t, k, v)
+            assert(typeof(k) == "string", `Invalid URL parameter: {k}`)
+            indices[t][k] = tostring(v)
+        end,
+        __tostring = function(t)
+            local data = ""
+            for i, v in indices[t] do
+                data ..= `&{encode(i)}={encode(v)}`
+            end
+            local final = t.BaseUrl .. "?" .. sub(data, 2, -1)
+            if sub(final, -1, -1) == "?" then
+                final = sub(final, 1, -2)
+            end
+            return final
+        end
+    }
+
+    function ShittyUrl.new(baseUrl: string)
+        local index = {}
+        local argStart = find(baseUrl, "?")
+        if argStart then
+            local args = split(sub(baseUrl, argStart + 1, -1), "&")
+            for i = 1, #args do
+                local key, value = unpack(split(args[i], "="))
+                if key and value then
+                    index[decode(key)] = decode(value)
+                end
+            end
+        else
+            argStart = 0 --bad code
+        end
+        local new = setmetatable({BaseUrl = sub(baseUrl, 1, argStart - 1)}, ShittyUrl)
+
+        indices[new] = index
+        return new
+    end
+
+    serverUrl = ShittyUrl.new("https://games.roblox.com/v1/games/%s/servers/Public?limit=100")
+end
+
 local Global_RootPlaceId
 
 --SETTINGS INITIALIZATION
@@ -158,7 +252,9 @@ do
         ServerTeleportsEnabled = true,
         AutoReconnectEnabled = false,
         ShowConnectionTimeouts = false,
-        ShowGameTeleports = false
+        ShowGameTeleports = false,
+        SortOrder = false,
+        ExcludeFullServers = false
     }
 
     assert(not isfolder(SettingsFileName), SettingsFileName .. " has been created as a folder. Teleport Utility cannot continue. Delete workspace\\" .. SettingsFileName .. " to use Teleport Utility.")
@@ -179,9 +275,17 @@ do
         UI_ClientTeleportCheckMark.Value = settingsIndex.ClientTeleportsEnabled
         UI_ServerTeleportCheckMark.Value = settingsIndex.ServerTeleportsEnabled
         UI_ShowGameTeleportsCheckMark.Value = settingsIndex.ShowGameTeleports
-        local autoReconnectEnabled = settingsIndex.AutoReconnectEnabled
-        UI_AutoReconnectCheckMark.Value = autoReconnectEnabled
+        UI_AutoReconnectCheckMark.Value = settingsIndex.AutoReconnectEnabled
         UI_ShowTimeoutsCheckMark.Value = settingsIndex.ShowConnectionTimeouts
+
+        local sortEnabled = settingsIndex.SortOrder
+        local excludeEnabled = settingsIndex.ExcludeFullServers
+
+        UI_SortOrderCheckMark.Value = sortEnabled
+        UI_ExcludeFullGamesCheckMark.Value = excludeEnabled
+
+        serverUrl.sortOrder = if sortEnabled then "1" else "2"
+        serverUrl.excludeFullGames = excludeEnabled
     end
 
     SavedSettings = setmetatable({}, {
@@ -209,6 +313,24 @@ UI_ShowTimeoutsCheckMark.OnUpdated:Connect(function()
     SavedSettings.ShowConnectionTimeouts = UI_ShowTimeoutsCheckMark.Value
 end)
 
+UI_SortOrderCheckMark.OnUpdated:Connect(function()
+    local enabled = UI_SortOrderCheckMark.Value
+    serverUrl.sortOrder = if enabled then "1" else "2"
+    SavedSettings.SortOrder = enabled
+    if refreshServerList then
+        refreshServerList()
+    end
+end)
+
+UI_ExcludeFullGamesCheckMark.OnUpdated:Connect(function()
+    local enabled = UI_ExcludeFullGamesCheckMark.Value
+    serverUrl.excludeFullGames = enabled
+    SavedSettings.ExcludeFullServers = enabled
+    if refreshServerList then
+        refreshServerList()
+    end
+end)
+
 --TELEPORT FUNCTION SETUP
 
 local PlacesInUniverseList = {Global_PlaceId}
@@ -216,7 +338,7 @@ local Teleport, CreateTeleportUtilityNotification
 do
     local CreateTeleportUtilityNotificationString = [[
         function(message, toastType)
-            print("[Teleport Utility] " .. tostring(message))
+            print(`[Teleport Utility] {message}`)
             syn.toast_notification({
                 Type = toastType or 4,
                 Title = "Teleport Utility",
@@ -227,7 +349,7 @@ do
     
     CreateTeleportUtilityNotification = loadstring("return " .. CreateTeleportUtilityNotificationString)()
 
-    local forceBasicTeleportString = string.format([[
+    local forceBasicTeleportString = format([[
         local CreateTeleportUtilityNotification = %s
 
         local teleportBeganNotification = function(place, job)
@@ -289,7 +411,7 @@ do
     ]], CreateTeleportUtilityNotificationString, ErrorEnumsString)
     local forceBasicTeleport = loadstring(forceBasicTeleportString)()
 
-    local BaseQueuedString = string.format([[
+    local BaseQueuedString = format([[
         local TeleportService = game:GetService("TeleportService")
 
         local forceBasicTeleport = loadstring([=[%s]=])()
@@ -322,7 +444,7 @@ do
                 forceBasicTeleport(place)
             end
         else
-            local queuedString = string.format(BaseQueuedString, place, if job then '"' .. job .. '"' else "nil")
+            local queuedString = format(BaseQueuedString, place, if job then '"' .. job .. '"' else "nil")
             queue_on_teleport(queuedString)
             settings():GetService("NetworkSettings").IncomingReplicationLag = math.huge
             forceBasicTeleport(Global_RootPlaceId or Global_PlaceId)
@@ -334,9 +456,9 @@ end
 
 do
     local parseJoinString = function(joinString)
-        local index = string.find(joinString, ":")
+        local index = find(joinString, ":")
         if index then
-            return tonumber(string.sub(joinString, 1, index - 1)), string.sub(joinString, index + 1, -1)
+            return tonumber(sub(joinString, 1, index - 1)), sub(joinString, index + 1, -1)
         else
             return nil
         end
@@ -354,7 +476,11 @@ do
             elseif #input == 36 then --length of a game.JobId GUID
                 Teleport(Global_PlaceId, input)
             else
-                Teleport(Global_PlaceId, Global_JobId)
+                if #Players:GetPlayers() > 1 then
+					Teleport(Global_PlaceId, Global_JobId)
+				else
+					Teleport(Global_PlaceId)
+				end
             end
         end
     end)
@@ -363,7 +489,7 @@ end
 UI_ServerHopButton.OnUpdated:Connect(function()
     CreateTeleportUtilityNotification("Finding server to hop to...", 4)
     local success, servers = pcall(function()
-		return HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. tostring(Global_PlaceId) .. "/servers/Public?limit=100")).data
+		return HttpService:JSONDecode(game:HttpGet(`https://games.roblox.com/v1/games/{Global_PlaceId}/servers/Public?limit=100`)).data
 	end)
     if success then
         local job
@@ -711,7 +837,7 @@ do
                     local shouldBannerDisplay = SavedSettings.ShowConnectionTimeouts and downTime > 1 and game:IsLoaded()
                     UI_TimeoutText.Visible = shouldBannerDisplay
                     UI_TimeoutBanner.Visible = shouldBannerDisplay
-                    UI_TimeoutText.Text = string.format("Server not responding... %0.2f", downTime)
+                    UI_TimeoutText.Text = format("Server not responding... %0.2f", downTime)
                 else
                     local shouldBannerDisplay = SavedSettings.ShowConnectionTimeouts and game:IsLoaded() and SavedSettings.AutoReconnectEnabled
                     UI_TimeoutText.Text = "Reconnecting..."
@@ -734,7 +860,7 @@ do
     local displayedUniverseViewerElements = {}
 
     local setupUniverseViewerEntry = function(data)
-        local selectable, sameLine, separator, teleportButtonEvent, copyButtonEvent = Function_AddUniverseViewerEntryUI()
+        local selectable, sameLine, separator, teleportButtonEvent, copyButtonEvent, viewServersEvent = Function_AddUniverseViewerEntryUI()
         local entryPlaceId = data.PlaceId
         local gameName = data.Name
         if Global_PlaceId == entryPlaceId then
@@ -751,10 +877,18 @@ do
         do
             local placeText = tostring(entryPlaceId)
             copyButtonEvent:Connect(function()
-                CreateTeleportUtilityNotification(string.format("Copied %s (%s) to clipboard", placeText, gameName), 1)
+                CreateTeleportUtilityNotification(format("Copied %s (%s) to clipboard", placeText, gameName), 1)
                 setclipboard(placeText)
             end)
         end
+
+        viewServersEvent:Connect(function()
+            serverListPlaceId = entryPlaceId
+            UI_Tabs.SelectedItem = 3 --hardcoded because not readable
+            if refreshServerList then
+                --refreshServerList()
+            end
+        end)
 
         local toggle = false
         selectable.OnUpdated:Connect(function()
@@ -796,7 +930,7 @@ end
 
 --UNIVERSE DETAILS
 
-do
+task.spawn(function()
     local url = "https://develop.roblox.com/v1/universes/" .. Global_GameId
 
     while true do
@@ -807,9 +941,9 @@ do
             UI_NameLabel.Label = gameName
             Global_RootPlaceId = data.rootPlaceId
             
+            local placeText = tostring(Global_GameId)
             UI_CopyGameIdButton.OnUpdated:Connect(function()
-                local placeText = tostring(Global_GameId)
-                CreateTeleportUtilityNotification(string.format("Copied %s (%s) to clipboard", placeText, gameName), 1)
+                CreateTeleportUtilityNotification(format("Copied %s (%s) to clipboard", placeText, gameName), 1)
                 setclipboard(placeText)
             end)
             
@@ -823,4 +957,107 @@ do
             task.wait(5)
         end
     end
+end)
+
+--SERVERLIST
+local getServerList = function(placeId)
+    local url = format(tostring(serverUrl), placeId)
+    local body = game:HttpGet(url)
+    local success, data = pcall(HttpService.JSONDecode, HttpService, body)
+    if success then
+        local errors = data.errors
+        if errors then
+            local str = "Roblox API Error:"
+            for i = 1, #errors do
+                local err = errors[i]
+                local code = err.code
+                local message = err.message
+                str ..= `\n\tCode {code}: {message}`
+            end
+            CreateTeleportUtilityNotification(str, 2)
+            return false
+        end
+        return data.data, data.nextPageCursor
+    end
+    return false
 end
+
+local selectedJobId = nil
+
+refreshServerList = function()
+    local currentPlaceId = serverListPlaceId
+    local serverList, cursor = getServerList(currentPlaceId)
+    if serverList then
+        UI_ServerListChildWindow:Clear()
+        local displayedServerListElements = {}
+        for i = 1, #serverList do
+            local server = serverList[i]
+            local selectable, sameLine, separator, tpEvent, copyEvent = Function_AddServerListEntryUI()
+            local label = `{server.playing or 0}/{server.maxPlayers or 0} players @ {math.round(server.fps or 0)} FPS & {server.ping or 0} ms ping`
+
+            local serverJobId = server.id
+
+            if server.id == Global_JobId then
+                label ..= " - you are HERE"
+            end
+            selectable.Label = label
+
+            tpEvent:Connect(function()
+                Teleport(currentPlaceId, serverJobId)
+            end)
+
+            copyEvent:Connect(function()
+                CreateTeleportUtilityNotification(format("Copied %s to clipboard", serverJobId), 1)
+                setclipboard(serverJobId)
+            end)
+
+            local toggle = false
+            local onUpdated = function()
+                if displayedServerListElements[1] == selectable or displayedServerListElements[1] == nil then
+                    toggle = not toggle
+                    selectable.Value = toggle
+                    sameLine.Visible = toggle
+                    separator.Visible = toggle
+                elseif displayedServerListElements[1] then
+                    toggle = true
+                    displayedServerListElements[1].Value = false
+                    displayedServerListElements[2].Visible = false
+                    displayedServerListElements[3].Visible = false
+                    selectable.Value = true
+                    sameLine.Visible = true
+                    separator.Visible = true
+                end
+                if toggle then
+                    selectedJobId = serverJobId
+                else
+                    selectedJobId = nil
+                end
+                displayedServerListElements[1] = selectable
+                displayedServerListElements[2] = sameLine
+                displayedServerListElements[3] = separator
+            end
+            if selectedJobId == serverJobId then
+                onUpdated()
+            end
+            selectable.OnUpdated:Connect(onUpdated)
+        end
+    else
+        return false
+    end
+end
+
+UI_SetServerPlaceButton.OnUpdated:Connect(function()
+    local value = tonumber(UI_ServerTextBox.Value)
+    if value then
+        serverListPlaceId = value
+        refreshServerList()
+    end
+end)
+
+UI_Tabs.OnUpdated:Connect(function(idx)
+    if idx == 3 then --hardcoded because idx isn't readable
+        refreshServerList()
+    end
+end)
+
+task.spawn(refreshServerList)
